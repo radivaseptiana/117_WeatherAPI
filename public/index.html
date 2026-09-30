@@ -4,6 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Weather API - Pencarian Lokasi</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+    
+    </style>
 </head>
 <body>
     <div class="card">
@@ -13,8 +18,8 @@
             <p>20240140117</p>
         </div>
         <hr>
-               <div class="search">
-            <input type="text" id="input-lokasi" placeholder="Cari lokasi... (mis. Bandung)">
+        <div class="search">
+            <input type="text" id="input-lokasi" placeholder="Cari lokasi... ">
             <button id="btn-cari">Search</button>
         </div>
 
@@ -23,39 +28,121 @@
         <div id="hasil">
             <div class="lokasi-title">
                 <small>Lokasi</small>
-                <h2 id="lokasi"></h2>
+                <h2 id="lokasi">-</h2>
             </div>
-            <div class="row"><span>Negara</span><span id="negara"></span></div>
-            <div class="row"><span>Provinsi</span><span id="provinsi"></span></div>
-            <div class="row"><span>Kecamatan</span><span id="kecamatan"></span></div>
-            <div class="row"><span>Longitude</span><span id="longitude"></span></div>
-            <div class="row"><span>Latitude</span><span id="latitude"></span></div>
+            <div class="row"><span>Negara</span><span id="negara">-</span></div>
+            <div class="row"><span>Provinsi</span><span id="provinsi">-</span></div>
+            <div class="row"><span>Kecamatan</span><span id="kecamatan">-</span></div>
+            <div class="row"><span>Longitude</span><span id="longitude">-</span></div>
+            <div class="row"><span>Latitude</span><span id="latitude">-</span></div>
         </div>
     </div>
-         <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/4.0.0/jquery.min.js" integrity="sha512-8LENNbXmzI/Gbj+OwXmqR6V4QaUAw0/porPzy1+dQoJqC0JPHedWoe0DDOTL2uHA5XXJyIsPtiMHH86pVlay6A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+        
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/4.0.0/jquery.min.js" integrity="sha512-8LENNbXmzI/Gbj+OwXmqR6V4QaUAw0/porPzy1+dQoJqC0JPHedWoe0DDOTL2uHA5XXJyIsPtiMHH86pVlay6A==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script>
         const API_KEY = "RlGrXLDS5niF5gx1M3PE";
 
+        function cariWilayah(feature, tipe) {
+            if (feature.place_type && feature.place_type.some(t => tipe.includes(t))) {
+                return feature.text;
+            }
+            if (feature.context) {
+                for (const c of feature.context) {
+                    const prefix = c.id.split(".")[0];
+                    if (tipe.includes(prefix)) return c.text;
+                }
+            }
+            return "-";
+        }
+
+        function cariKecamatan(f) {
+            $("#kecamatan").text("Mencari...");
+            const lon = f.center[0];
+            const lat = f.center[1];
+
+            const prioritas = [
+                "municipal_district",
+                "joint_submunicipality",
+                "municipality",
+                "joint_municipality",
+                "locality",
+                "neighbourhood"
+            ];
+
+            function pilih(daftar) {
+                for (const tipe of prioritas) {
+                    const hit = daftar.find(x => x.id && x.id.split(".")[0] === tipe);
+                    if (hit) return hit.text;
+                }
+                return null;
+            }
+
+            const awal = [f].concat(f.context || []);
+            const dariAwal = pilih(awal);
+            if (dariAwal) {
+                $("#kecamatan").text(dariAwal);
+                return;
+            }
+
+            $.ajax({
+                url: "https://api.maptiler.com/geocoding/" + lon + "," + lat + ".json?key=" + API_KEY + "&language=id",
+                method: "GET",
+                success: function (data) {
+                    const semua = [];
+                    data.features.forEach(x => {
+                        semua.push(x);
+                        (x.context || []).forEach(c => semua.push(c));
+                    });
+                    $("#kecamatan").text(pilih(semua) || "-");
+                },
+                error: function (error) {
+                    console.log(error);
+                    $("#kecamatan").text("-");
+                }
+            });
+        }
+
         function cari() {
             const kota = $("#input-lokasi").val().trim();
-            const urlapi = "https://api.maptiler.com/geocoding/" + encodeURIComponent(kota) + ".json?key=" + API_KEY;
+            if (!kota) {
+                $("#status").text("Masukkan nama lokasi dulu ya.");
+                return;
+            }
+
+            $("#status").text("Mencari data...");
+
+            const urlapi = "https://api.maptiler.com/geocoding/" + encodeURIComponent(kota) + ".json?key=" + API_KEY + "&language=id&limit=1";
 
             $.ajax({
                 url: urlapi,
                 method: "GET",
                 success: function (data) {
-                    console.log(data);
+                    if (!data.features || data.features.length === 0) {
+                        $("#status").text("Lokasi tidak ditemukan.");
+                        return;
+                    }
+
                     const f = data.features[0];
-                    $("#lokasi").text(f.matching_text);
-                    $("#negara").text(f.context[f.context.length - 1].text);
+                    $("#lokasi").text(f.matching_text || f.text || f.place_name);
+                    $("#negara").text(cariWilayah(f, ["country"]));
+                    $("#provinsi").text(cariWilayah(f, ["region"]));
+                    cariKecamatan(f);
+                    $("#longitude").text(f.center[0]);
+                    $("#latitude").text(f.center[1]);
+
+                    $("#status").text("");
                 },
                 error: function (error) {
                     console.log(error);
+                    $("#status").text("Gagal mengambil data API.");
                 }
             });
         }
 
         $("#btn-cari").on("click", cari);
+        $("#input-lokasi").on("keypress", function (e) {
+            if (e.key === "Enter") cari();
+        });
     </script>
 </body>
 </html>
